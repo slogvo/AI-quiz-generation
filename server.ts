@@ -352,38 +352,74 @@ Return ONLY the JSON response.`;
   // API 1b: Generate Quiz for a Specific Module
   app.post("/api/generate-module-quiz", async (req, res) => {
     try {
-      const { moduleTitle, lessonTexts, difficulty } = req.body;
-      const prompt = `You are an expert educator. Generate a detailed, interactive evaluation Quiz of 3 interesting questions for the module titled: "${moduleTitle}".
-      This module contains these lessons: ${JSON.stringify(lessonTexts)}.
-      The target student difficulty level is: "${difficulty || "Intermediate"}".
-      
-      The output MUST be a single, valid JSON object matching this schema structure:
+      const { 
+        moduleTitle, 
+        lessonTexts, 
+        difficulty, 
+        numQuestions, 
+        optionsCount, 
+        language, 
+        questionTypes, 
+        customNotes 
+      } = req.body;
+
+      const targetDifficulty = difficulty || "Intermediate";
+      const count = numQuestions ? parseInt(numQuestions) : 5;
+      const optsLimit = optionsCount ? parseInt(optionsCount) : 4;
+      const lang = language || "Vietnamese";
+      const activeTypes = (questionTypes && questionTypes.length > 0)
+        ? questionTypes
+        : ["multiple-choice", "true-false", "short-answer", "multiple-response", "fill-in-the-blank"];
+      const notes = customNotes || "";
+
+      const prompt = `You are an expert educator. Please generate a detailed, high-quality interactive evaluation Quiz containing EXACTLY ${count} questions for the module titled: "${moduleTitle}".
+      This module covers the following lessons text content: ${JSON.stringify(lessonTexts)}.
+      ${notes ? `Special additional user requirements and source notes to incorporate: "${notes}"` : ""}
+
+      Target parameters representing student requirements:
+      - Target student difficulty level: "${targetDifficulty}"
+      - Preferred language of output (questions, options, explanations): "${lang}"
+      - Number of questions to generate: "${count}"
+      - Allowed Question Types to distribute among generated items: ${JSON.stringify(activeTypes)}
+      - Number of choices per multiple-choice or multiple-response item: ${optsLimit}
+
+      CRITICAL DEFINITIONS FOR THE ALLOWED QUESTION TYPES:
+      ONLY generate questions whose "type" field is in this list: ${JSON.stringify(activeTypes)}.
+      - 'multiple-choice': Render an 'options' array containing precisely ${optsLimit} distinct choices, and a number 'correctOptionIndex' (0-indexed).
+      - 'true-false': Render an 'options' array containing exactly 2 options: ["Đăng", "Sai"] (or ["True", "False"] if English). Set 'correctOptionIndex' (0 or 1).
+      - 'multiple-response': Render an 'options' array containing precisely ${optsLimit} choices, and an array 'correctOptionIndices' containing integers of all correct choices (e.g. [0, 2]). Ensure at least one option is correct.
+      - 'fill-in-the-blank': The question 'text' MUST contain a blank marked as "_____". Do not include 'options'. Set 'correctAnswer' to the exact missing word/phrase that fits.
+      - 'short-answer': No 'options'. Set 'correctAnswer' to a short concise correct answer reference.
+      - 'essay': No 'options'. Set 'correctAnswer' with a brief grading rubric or guide.
+
+      The output MUST be a single, valid JSON object matching this schema structure exactly:
       {
-        "id": "quiz_generated_${Date.now()}",
+        "id": "quiz_mq_val_${Date.now()}",
         "title": "Comprehensive Quiz: ${moduleTitle.replace(/"/g, '\\"')}",
-        "description": "Interactive module-level quiz assessing core principles from this chapter.",
+        "description": "Interactive module-level evaluation checking comprehension of the lesson material.",
         "settings": {
-          "totalPoints": 3,
-          "targetDifficulty": "${difficulty || "Intermediate"}",
-          "timeLimit": 15,
+          "totalPoints": ${count},
+          "targetDifficulty": "${targetDifficulty}",
+          "timeLimit": ${Math.max(5, count * 3)},
           "shuffleQuestions": true,
           "shuffleOptions": true
         },
         "questions": [
           {
-            "id": "mq_1",
-            "type": "multiple-choice",
-            "text": "Nuanced question analyzing lesson topics?",
-            "options": ["Nuanced answer Option A", "Nuanced answer Option B", "Nuanced answer Option C", "Nuanced answer Option D"],
-            "correctOptionIndex": 0,
+            "id": "mq_item_1",
+            "type": "one of the active question types generated",
+            "text": "The localized question text",
+            "options": ["Option A", "Option B"...], // ONLY define if type is multiple-choice, true-false, or multiple-response
+            "correctOptionIndex": 0, // ONLY define if type is multiple-choice or true-false
+            "correctOptionIndices": [0, 2], // ONLY define if type is multiple-response
+            "correctAnswer": "Answer text or guidelines", // ONLY define if type is short-answer, fill-in-the-blank, or essay
             "points": 1,
             "required": true
           }
         ]
       }
-      
-      Ensure question types are 'multiple-choice', 'essay' (rubric hint in correctAnswer), 'short-answer', or 'true-false'.
-      Provide exactly 3 questions. Make all questions have interesting, realistic questions based on "${moduleTitle}".
+
+      Ensure you generate EXACTLY ${count} questions. Use realistic scenario contents.
       Return ONLY raw JSON, with no markdown code blocks.`;
 
       let generatedQuiz = null;
@@ -406,45 +442,91 @@ Return ONLY the JSON response.`;
       }
 
       if (!generatedQuiz) {
+        // High quality fallback with requested count and types
+        const questionsList: any[] = [];
+        for (let i = 0; i < count; i++) {
+          const type = activeTypes[i % activeTypes.length];
+          const isVietnamese = lang.toLowerCase().includes("viet");
+          
+          if (type === 'multiple-choice') {
+            questionsList.push({
+              id: `mq_fallback_${i}`,
+              type: "multiple-choice",
+              text: isVietnamese 
+                ? `Khái niệm cốt lõi nào đại diện cho trọng tâm của chương học "${moduleTitle}"?`
+                : `Which core concept represents the primary focus of "${moduleTitle}"?`,
+              options: isVietnamese
+                ? ["Lý thuyết tiền tệ tối ưu", "Cung cầu vi mô cơ bản", "Khung tương tác động", "Các lý thuyết hành vi khác"]
+                : ["Optimal monetary theory", "Micro demand and supply", "Dynamic framework", "Alternative behavioral models"],
+              correctOptionIndex: 1,
+              points: 1,
+              required: true
+            });
+          } else if (type === 'true-false') {
+            questionsList.push({
+              id: `mq_fallback_${i}`,
+              type: "true-false",
+              text: isVietnamese
+                ? `Có phải việc rèn luyện thường xuyên giúp nâng cao khả năng tiếp thu kiến thức trong chương "${moduleTitle}"?`
+                : `Does regular practice help improve knowledge absorption in the "${moduleTitle}" module?`,
+              options: isVietnamese ? ["Đúng", "Sai"] : ["True", "False"],
+              correctOptionIndex: 0,
+              points: 1,
+              required: true
+            });
+          } else if (type === 'multiple-response') {
+            questionsList.push({
+              id: `mq_fallback_${i}`,
+              type: "multiple-response",
+              text: isVietnamese
+                ? "Những yếu tố nào sau đây đóng vai trò quan trọng đối với sự phát triển của môn học này? (Chọn nhiều)"
+                : "Which of the following factors play crucial roles in the development of this topic? (Select all)",
+              options: isVietnamese
+                ? ["Nghiên cứu lý thuyết", "Ứng dụng thực tế", "Các công cụ phân tích", "Sự may rủi ngẫu nhiên"]
+                : ["Theoretical research", "Practical applications", "Analytical tool sets", "Random physical luck"],
+              correctOptionIndices: [0, 1, 2],
+              points: 1,
+              required: true
+            });
+          } else if (type === 'fill-in-the-blank') {
+            questionsList.push({
+              id: `mq_fallback_${i}`,
+              type: "fill-in-the-blank",
+              text: isVietnamese
+                ? `Mục tiêu hàng đầu của chương học này là phát sinh và đánh giá _____ học tập một cách tự động.`
+                : `The ultimate goal of this course is to automatically generate and evaluate learning _____ in real-time.`,
+              correctAnswer: isVietnamese ? "nội dung" : "content",
+              points: 1,
+              required: true
+            });
+          } else {
+            questionsList.push({
+              id: `mq_fallback_${i}`,
+              type: "short-answer",
+              text: isVietnamese
+                ? `Hãy giới thiệu tóm tắt một ứng dụng thực tiễn nổi bật nhất của chương "${moduleTitle}".`
+                : `Briefly describe one of the most prominent real-world applications of "${moduleTitle}".`,
+              points: 1,
+              required: true,
+              correctAnswer: isVietnamese 
+                ? "Giúp tối ưu hóa quy trình học tập và kiểm tra định kỳ."
+                : "Helps optimize learning procedures and periodic testing workflows."
+            });
+          }
+        }
+
         generatedQuiz = {
           id: `quiz_gen_${Date.now()}`,
           title: `Comprehensive Quiz: ${moduleTitle || "Module Quiz"}`,
           description: `AI-generated knowledge evaluation based on the core content of ${moduleTitle || "this module"}.`,
           settings: {
-            totalPoints: 3,
-            targetDifficulty: difficulty || "Intermediate",
-            timeLimit: 15,
+            totalPoints: count,
+            targetDifficulty: targetDifficulty,
+            timeLimit: Math.max(5, count * 3),
             shuffleQuestions: true,
             shuffleOptions: true
           },
-          questions: [
-            {
-              id: `mq_fallback_1`,
-              type: "multiple-choice",
-              text: `Which core principle represents the primary focus of ${moduleTitle || "this chapter"}?`,
-              options: ["The baseline model condition", "Alternative peripheral theories", "Traditional demand elasticity rules"],
-              correctOptionIndex: 0,
-              points: 1,
-              required: true
-            },
-            {
-              id: `mq_fallback_2`,
-              type: "true-false",
-              text: `Understanding structural shifts allows teachers to pinpoint exact knowledge gaps in ${moduleTitle || "this study direction"}.`,
-              options: ["True", "False"],
-              correctOptionIndex: 0,
-              points: 1,
-              required: true
-            },
-            {
-              id: `mq_fallback_3`,
-              type: "essay",
-              text: `Summarize the primary takeaways from this module and how they connect to real world challenges.`,
-              points: 1,
-              required: true,
-              correctAnswer: "The student should cover core axioms, structural definitions, and application models specified in lessons."
-            }
-          ]
+          questions: questionsList.slice(0, count)
         };
       }
       res.json(generatedQuiz);
@@ -457,37 +539,74 @@ Return ONLY the JSON response.`;
   // API 1c: Generate Quiz for a Specific Lesson
   app.post("/api/generate-lesson-quiz", async (req, res) => {
     try {
-      const { lessonTitle, lessonContent, difficulty } = req.body;
-      const prompt = `You are an expert educator. Generate a practice interactive Quiz containing exactly 3 questions based SPECIFICALLY on the reading material of the lesson titled: "${lessonTitle}".
-      Lesson reading content: "${lessonContent ? lessonContent.slice(0, 4000) : "General study guide"}"
-      The target student difficulty level is: "${difficulty || "Intermediate"}".
-      
-      The output MUST be a single, valid JSON object matching this schema structure:
+      const { 
+        lessonTitle, 
+        lessonContent, 
+        difficulty, 
+        numQuestions, 
+        optionsCount, 
+        language, 
+        questionTypes, 
+        customNotes 
+      } = req.body;
+
+      const targetDifficulty = difficulty || "Intermediate";
+      const count = numQuestions ? parseInt(numQuestions) : 5;
+      const optsLimit = optionsCount ? parseInt(optionsCount) : 4;
+      const lang = language || "Vietnamese";
+      const activeTypes = (questionTypes && questionTypes.length > 0)
+        ? questionTypes
+        : ["multiple-choice", "true-false", "short-answer", "multiple-response", "fill-in-the-blank"];
+      const notes = customNotes || "";
+
+      const prompt = `You are an expert educator. Please generate a practice interactive Quiz containing EXACTLY ${count} questions based SPECIFICALLY on the reading material of the lesson titled: "${lessonTitle}".
+      Lesson reading content (first 4000 characters): "${lessonContent ? lessonContent.slice(0, 4000) : "General study guide"}"
+      ${notes ? `Special additional user requests and source notes to incorporate: "${notes}"` : ""}
+
+      Target parameters representing student requirements:
+      - Target student difficulty level: "${targetDifficulty}"
+      - Preferred language of output (questions, options, explanations): "${lang}"
+      - Number of questions to generate: "${count}"
+      - Allowed Question Types to distribute among generated items: ${JSON.stringify(activeTypes)}
+      - Number of choices per multiple-choice or multiple-response item: ${optsLimit}
+
+      CRITICAL DEFINITIONS FOR THE ALLOWED QUESTION TYPES:
+      ONLY generate questions whose "type" field is in this list: ${JSON.stringify(activeTypes)}.
+      - 'multiple-choice': Render an 'options' array containing precisely ${optsLimit} distinct choices, and a number 'correctOptionIndex' (0-indexed).
+      - 'true-false': Render an 'options' array containing exactly 2 options: ["Đứng", "Sai"] (or ["True", "False"] if English). Set 'correctOptionIndex' (0 or 1).
+      - 'multiple-response': Render an 'options' array containing precisely ${optsLimit} choices, and an array 'correctOptionIndices' containing integers of all correct choices (e.g. [0, 2]). Ensure at least one option is correct.
+      - 'fill-in-the-blank': The question 'text' MUST contain a blank marked as "_____". Do not include 'options'. Set 'correctAnswer' to the exact missing word/phrase that fits.
+      - 'short-answer': No 'options'. Set 'correctAnswer' to a short concise correct answer reference.
+      - 'essay': No 'options'. Set 'correctAnswer' with a brief grading rubric or guide.
+
+      The output MUST be a single, valid JSON object matching this schema structure exactly:
       {
-        "id": "quiz_lesson_${Date.now()}",
+        "id": "quiz_lesson_val_${Date.now()}",
         "title": "Practice Quiz: ${lessonTitle.replace(/"/g, '\\"')}",
         "description": "Short practice evaluation checking comprehension of the lesson material.",
         "settings": {
-          "totalPoints": 3,
-          "targetDifficulty": "${difficulty || "Intermediate"}",
-          "timeLimit": 5,
+          "totalPoints": ${count},
+          "targetDifficulty": "${targetDifficulty}",
+          "timeLimit": ${Math.max(5, count * 2)},
           "shuffleQuestions": false,
           "shuffleOptions": true
         },
         "questions": [
           {
-            "id": "l_q_1",
-            "type": "multiple-choice",
-            "text": "A specific multiple choice question based directly on the reading material provided?",
-            "options": ["Correct answer based strictly on text", "Distractor B", "Distractor C"],
-            "correctOptionIndex": 0,
+            "id": "l_q_item_1",
+            "type": "one of the active question types generated",
+            "text": "The localized question text",
+            "options": ["Option A", "Option B"...], // ONLY define if type is multiple-choice, true-false, or multiple-response
+            "correctOptionIndex": 0, // ONLY define if type is multiple-choice or true-false
+            "correctOptionIndices": [0, 2], // ONLY define if type is multiple-response
+            "correctAnswer": "Answer text or guidelines", // ONLY define if type is short-answer, fill-in-the-blank, or essay
             "points": 1,
             "required": true
           }
         ]
       }
-      
-      Ensure question types are 'multiple-choice', 'essay', or 'true-false' as appropriate. Provide exactly 3 questions.
+
+      Ensure you generate EXACTLY ${count} questions. Direct queries around the lesson content.
       Return ONLY raw JSON, with no markdown code blocks.`;
 
       let generatedQuiz = null;
@@ -510,45 +629,91 @@ Return ONLY the JSON response.`;
       }
 
       if (!generatedQuiz) {
+        // High quality fallback with requested count and types
+        const questionsList: any[] = [];
+        for (let i = 0; i < count; i++) {
+          const type = activeTypes[i % activeTypes.length];
+          const isVietnamese = lang.toLowerCase().includes("viet");
+          
+          if (type === 'multiple-choice') {
+            questionsList.push({
+              id: `lq_fallback_${i}`,
+              type: "multiple-choice",
+              text: isVietnamese 
+                ? `Mối quan hệ chính được chỉ ra trong bài học "${lessonTitle}" là gì?`
+                : `What is the principal dynamic relation specified in "${lessonTitle}"?`,
+              options: isVietnamese
+                ? ["Tương tác hai chiều trực tiếp", "Độc lập hoàn toàn", "Cách phân tích gián tiếp", "Yếu tố khách quan duy nhất"]
+                : ["Direct bi-directional relationship", "Total state independence", "Indirect statistical analysis", "Sole external factors"],
+              correctOptionIndex: 0,
+              points: 1,
+              required: true
+            });
+          } else if (type === 'true-false') {
+            questionsList.push({
+              id: `lq_fallback_${i}`,
+              type: "true-false",
+              text: isVietnamese
+                ? `Theo nội dung bài học, kết quả đánh giá luôn phản ánh chính xác nỗ lực học tập.`
+                : `According to the lesson, evaluation results always precisely reflect study effort.`,
+              options: isVietnamese ? ["Đúng", "Sai"] : ["True", "False"],
+              correctOptionIndex: 0,
+              points: 1,
+              required: true
+            });
+          } else if (type === 'multiple-response') {
+            questionsList.push({
+              id: `lq_fallback_${i}`,
+              type: "multiple-response",
+              text: isVietnamese
+                ? "Những khái niệm bổ sung nào được đề cập gián tiếp trong nội dung này? (Chọn nhiều)"
+                : "Which auxiliary concepts are indirectly discussed in this content? (Select all)",
+              options: isVietnamese
+                ? ["Nội dung cốt lõi", "Chiến lược ôn tập", "Mục tiêu dài hạn", "Học vẹt đối phó"]
+                : ["Core substance", "Revision strategies", "Long term planning goals", "Rote memorization"],
+              correctOptionIndices: [0, 1, 2],
+              points: 1,
+              required: true
+            });
+          } else if (type === 'fill-in-the-blank') {
+            questionsList.push({
+              id: `lq_fallback_${i}`,
+              type: "fill-in-the-blank",
+              text: isVietnamese
+                ? `Bài học "${lessonTitle}" khuyên học sinh nên làm quen với _____ thực hành trước khi kiểm tra.`
+                : `The lesson "${lessonTitle}" advises students to familiarize themselves with practical _____ before testing.`,
+              correctAnswer: isVietnamese ? "bài tập" : "exercises",
+              points: 1,
+              required: true
+            });
+          } else {
+            questionsList.push({
+              id: `lq_fallback_${i}`,
+              type: "short-answer",
+              text: isVietnamese
+                ? `Bài học "${lessonTitle}" nhấn mạnh khía cạnh quan trọng nhất nào đối với nghiên cứu sinh?`
+                : `What major aspect did the study of "${lessonTitle}" emphasize the most for research students?`,
+              points: 1,
+              required: true,
+              correctAnswer: isVietnamese 
+                ? "Sự thấu hiểu bản chất lý thuyết đi đôi với rèn luyện tư duy phản biện."
+                : "Understanding theoretical substance paired with critical reasoning development."
+            });
+          }
+        }
+
         generatedQuiz = {
           id: `quiz_lesson_gen_${Date.now()}`,
           title: `Practice Quiz: ${lessonTitle || "Lesson practice"}`,
           description: `Verification quiz tailored directly around the reading content of ${lessonTitle || "this lesson"}.`,
           settings: {
-            totalPoints: 3,
-            targetDifficulty: difficulty || "Intermediate",
-            timeLimit: 10,
+            totalPoints: count,
+            targetDifficulty: targetDifficulty,
+            timeLimit: Math.max(5, count * 2),
             shuffleQuestions: false,
             shuffleOptions: true
           },
-          questions: [
-            {
-              id: `lq_fallback_1`,
-              type: "multiple-choice",
-              text: `Based directly on the text of ${lessonTitle || "the lesson"}, what is the principal assumption mentioned?`,
-              options: ["The core dynamic assumption is correct under constant conditions", "Conditions are volatile", "No assumptions are made"],
-              correctOptionIndex: 0,
-              points: 1,
-              required: true
-            },
-            {
-              id: `lq_fallback_2`,
-              type: "true-false",
-              text: `The reading material argues that mastering these basics is critical before attempting more complex simulations.`,
-              options: ["True", "False"],
-              correctOptionIndex: 0,
-              points: 1,
-              required: true
-            },
-            {
-              id: `lq_fallback_3`,
-              type: "essay",
-              text: `Discuss the implications of the structural concepts introduced in this lesson.`,
-              points: 1,
-              required: true,
-              correctAnswer: "Refer back directly to the core paragraphs regarding equilibrium shifts and demand constraints."
-            }
-          ]
+          questions: questionsList.slice(0, count)
         };
       }
       res.json(generatedQuiz);
@@ -618,39 +783,76 @@ Return ONLY the JSON response.`;
   // API 1d: Generate Course-level Quiz with AI
   app.post("/api/generate-course-quiz", async (req, res) => {
     try {
-      const { courseTitle, courseDescription, modulesData, difficulty } = req.body;
-      const prompt = `You are an expert educator and syllabus architect. Please generate a detailed, comprehensive end-of-course review Quiz containing exactly 4 questions based on the entire curriculum of the course: "${courseTitle}".
+      const { 
+        courseTitle, 
+        courseDescription, 
+        modulesData, 
+        difficulty, 
+        numQuestions, 
+        optionsCount, 
+        language, 
+        questionTypes, 
+        customNotes 
+      } = req.body;
+
+      const targetDifficulty = difficulty || "Advanced";
+      const count = numQuestions ? parseInt(numQuestions) : 5;
+      const optsLimit = optionsCount ? parseInt(optionsCount) : 4;
+      const lang = language || "Vietnamese";
+      const activeTypes = (questionTypes && questionTypes.length > 0)
+        ? questionTypes
+        : ["multiple-choice", "true-false", "short-answer", "multiple-response", "fill-in-the-blank"];
+      const notes = customNotes || "";
+
+      const prompt = `You are an expert educator and syllabus architect. Please generate a detailed, comprehensive end-of-course review Quiz containing EXACTLY ${count} questions based on the entire curriculum of the course: "${courseTitle}".
       Course Description: "${courseDescription}"
-      Course Modules and Lesson Details: ${JSON.stringify(modulesData)}
-      The target student difficulty level is: "${difficulty || "Advanced"}".
+      Course Modules & Lessons: ${JSON.stringify(modulesData)}
+      ${notes ? `Special additional user requirements and source notes to incorporate: "${notes}"` : ""}
+
+      Target parameters representing student requirements:
+      - Student Difficulty level: "${targetDifficulty}"
+      - Preferred language of output (questions, options, explanations): "${lang}"
+      - Number of questions to generate: "${count}"
+      - Allowed Question Types to distribute among generated items: ${JSON.stringify(activeTypes)}
+      - Number of choices per multiple-choice or multiple-response item: ${optsLimit}
+
+      CRITICAL DEFINITIONS FOR THE ALLOWED QUESTION TYPES:
+      ONLY generate questions whose "type" field is in this list: ${JSON.stringify(activeTypes)}.
+      - 'multiple-choice': Render an 'options' array containing precisely ${optsLimit} distinct choices, and a number 'correctOptionIndex' (0-indexed).
+      - 'true-false': Render an 'options' array containing exactly 2 options: ["Đăng", "Sai"] (or ["True", "False"] if English). Set 'correctOptionIndex' (0 or 1).
+      - 'multiple-response': Render an 'options' array containing precisely ${optsLimit} choices, and an array 'correctOptionIndices' containing integers of all correct choices (e.g. [0, 2]). Ensure at least one option is correct.
+      - 'fill-in-the-blank': The question 'text' MUST contain a blank marked as "_____". Do not include 'options'. Set 'correctAnswer' to the exact missing word/phrase that fits.
+      - 'short-answer': No 'options'. Set 'correctAnswer' to a short concise correct answer reference.
+      - 'essay': No 'options'. Set 'correctAnswer' with a brief grading rubric or guide.
 
       Your output MUST be a single, valid JSON object matching this schema exactly:
       {
-        "id": "quiz_course_gen_${Date.now()}",
-        "title": "Comprehensive Quiz: ${courseTitle.replace(/"/g, '\\"')}",
+        "id": "quiz_course_val_${Date.now()}",
+        "title": "Integrated Course Exam: ${courseTitle.replace(/"/g, '\\"')}",
         "description": "Comprehensive course-level final assessment covering core lessons throughout the syllabus.",
         "settings": {
-          "totalPoints": 4,
-          "targetDifficulty": "${difficulty || "Advanced"}",
-          "timeLimit": 20,
+          "totalPoints": ${count},
+          "targetDifficulty": "${targetDifficulty}",
+          "timeLimit": ${Math.max(10, count * 3)},
           "shuffleQuestions": true,
           "shuffleOptions": true
         },
         "questions": [
           {
-            "id": "cq_1",
-            "type": "multiple-choice",
-            "text": "Provide an integrated question connecting multiple modules together?",
-            "options": ["Synthesized Option A", "Synthesized Option B", "Synthesized Option C", "Synthesized Option D"],
-            "correctOptionIndex": 0,
+            "id": "cq_item_1",
+            "type": "one of the active question types generated",
+            "text": "The localized question text representing cross-module integration",
+            "options": ["Option 1", "Option 2"...], // ONLY define if type is multiple-choice, true-false, or multiple-response
+            "correctOptionIndex": 0, // ONLY define if type is multiple-choice or true-false
+            "correctOptionIndices": [0, 2], // ONLY define if type is multiple-response
+            "correctAnswer": "Answer text or guidelines", // ONLY define if type is short-answer, fill-in-the-blank, or essay
             "points": 1,
             "required": true
           }
         ]
       }
 
-      Ensure questions represent synthesis. Provide exactly 4 questions.
-      Ensure question types are 'multiple-choice', 'essay' (rubric hint in correctAnswer), 'short-answer', or 'true-false'.
+      Ensure you generate EXACTLY ${count} questions symbolizing synthesis.
       Return ONLY raw JSON, with no markdown code blocks.`;
 
       let generatedQuiz = null;
@@ -673,45 +875,91 @@ Return ONLY the JSON response.`;
       }
 
       if (!generatedQuiz) {
+        // High quality fallback with requested count and types
+        const questionsList: any[] = [];
+        for (let i = 0; i < count; i++) {
+          const type = activeTypes[i % activeTypes.length];
+          const isVietnamese = lang.toLowerCase().includes("viet");
+          
+          if (type === 'multiple-choice') {
+            questionsList.push({
+              id: `cq_fallback_${i}`,
+              type: "multiple-choice",
+              text: isVietnamese 
+                ? `Làm thế nào để tổng hợp các bài học khác nhau trong khóa học "${courseTitle}" để có cái nhìn toàn diện nhất?`
+                : `How should one synthesize different lessons in the "${courseTitle}" course for a holistic view?`,
+              options: isVietnamese
+                ? ["Phân tích hệ thống tích hợp", "Tách lý thuyết rời rạc", "Bỏ qua các định lý phụ", "Nhớ thuộc lòng từng chi tiết"]
+                : ["Integrated systems analysis", "Isolated theory breakdown", "Ignoring subclass theorems", "Rote memorizing of details"],
+              correctOptionIndex: 0,
+              points: 1,
+              required: true
+            });
+          } else if (type === 'true-false') {
+            questionsList.push({
+              id: `cq_fallback_${i}`,
+              type: "true-false",
+              text: isVietnamese
+                ? `Mục tiêu cuối cùng của khóa học "${courseTitle}" là giúp học viên làm chủ kiến thức nền tảng vững vàng.`
+                : `The ultimate objective of the "${courseTitle}" course is to help students soundly master core principles.`,
+              options: isVietnamese ? ["Đúng", "Sai"] : ["True", "False"],
+              correctOptionIndex: 0,
+              points: 1,
+              required: true
+            });
+          } else if (type === 'multiple-response') {
+            questionsList.push({
+              id: `cq_fallback_${i}`,
+              type: "multiple-response",
+              text: isVietnamese
+                ? "Những khái niệm bổ sung nào có tác động liên chương trong khóa học này? (Chọn nhiều)"
+                : "Which supplemental topics have cross-module effects in this course? (Select all)",
+              options: isVietnamese
+                ? ["Sự thống nhất khái niệm", "Yếu tố thời gian thực tế", "Các công cụ phân tích chéo", "Kiến thức ngoài lề không liên quan"]
+                : ["Conceptual uniformity", "Real-world temporal impacts", "Cross-analytical utilities", "Irrelevant secondary knowledge"],
+              correctOptionIndices: [0, 1, 2],
+              points: 1,
+              required: true
+            });
+          } else if (type === 'fill-in-the-blank') {
+            questionsList.push({
+              id: `cq_fallback_${i}`,
+              type: "fill-in-the-blank",
+              text: isVietnamese
+                ? `Thiết kế khóa học "${courseTitle}" kết hợp chặt chẽ việc phát sinh bài giảng và _____ trắc nghiệm tự động.`
+                : `The design of the "${courseTitle}" course tightly links lesson material generation with automatic _____ evaluation.`,
+              correctAnswer: isVietnamese ? "đánh giá" : "assessment",
+              points: 1,
+              required: true
+            });
+          } else {
+            questionsList.push({
+              id: `cq_fallback_${i}`,
+              type: "short-answer",
+              text: isVietnamese
+                ? `Trình bày tóm tắt kết luận tổng quát của toàn bộ khóa học "${courseTitle}".`
+                : `Summarize the overall comprehensive conclusion of the entire "${courseTitle}" course.`,
+              points: 1,
+              required: true,
+              correctAnswer: isVietnamese 
+                ? "Sự liên kết khoa học giữa các bài học tạo nên khung năng lực vững chắc."
+                : "The scientific linking of lessons creates a robust competence framework."
+            });
+          }
+        }
+
         generatedQuiz = {
           id: `quiz_course_gen_${Date.now()}`,
-          title: `Comprehensive Final Assessment: ${courseTitle || "Course Study"}`,
-          description: `AI-generated end-of-course final assessment summarizing all core ideas.`,
+          title: `Integrated Course Exam: ${courseTitle || "Course Final Exam"}`,
+          description: `AI-generated final exam evaluating all chapters and synthesis topics.`,
           settings: {
-            totalPoints: 4,
-            targetDifficulty: difficulty || "Advanced",
-            timeLimit: 20,
+            totalPoints: count,
+            targetDifficulty: targetDifficulty,
+            timeLimit: Math.max(10, count * 3),
             shuffleQuestions: true,
             shuffleOptions: true
           },
-          questions: [
-            {
-              id: `cq_fallback_1`,
-              type: "multiple-choice",
-              text: `How do variables across different modules in "${courseTitle || "this course"}" structurally influence one another?`,
-              options: ["They share interdependent feedback loops under market conditions", "They are completely isolated indicators", "The factors adjust independently of aggregate values"],
-              correctOptionIndex: 0,
-              points: 1,
-              required: true
-            },
-            {
-              id: `cq_fallback_2`,
-              type: "true-false",
-              text: `According to this course syllabus, mastering concepts across early modules is essential to successfully solve advanced scenario questions.`,
-              options: ["True", "False"],
-              correctOptionIndex: 0,
-              points: 1,
-              required: true
-            },
-            {
-              id: `cq_fallback_3`,
-              type: "essay",
-              text: `Discuss how the overarching ideas of this course apply to current global economic trends.`,
-              points: 2,
-              required: true,
-              correctAnswer: "The student should touch upon key cross-module theories analyzed throughout supply, demand, output metrics, and policy shifts."
-            }
-          ]
+          questions: questionsList.slice(0, count)
         };
       }
       res.json(generatedQuiz);

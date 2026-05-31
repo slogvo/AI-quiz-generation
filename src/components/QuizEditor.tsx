@@ -49,8 +49,30 @@ export default function QuizEditor({ course, onBack, onUpdateCourse, onPreviewQu
   const [isGeneratingLessonQuiz, setIsGeneratingLessonQuiz] = useState<boolean>(false);
   const [generationError, setGenerationError] = useState<string>('');
 
+  // AI Quiz Creator Custom Configuration State
+  const [setupGenTarget, setSetupGenTarget] = useState<{
+    type: 'lesson' | 'module' | 'course';
+    targetId?: string;
+    title: string;
+  } | null>(null);
+
+  // Config settings state fields
+  const [configNumQuestions, setConfigNumQuestions] = useState<number>(5);
+  const [configOptionsCount, setConfigOptionsCount] = useState<number>(4);
+  const [configDifficulty, setConfigDifficulty] = useState<'Beginner' | 'Intermediate' | 'Advanced'>('Intermediate');
+  const [configLanguage, setConfigLanguage] = useState<'Vietnamese' | 'English'>('Vietnamese');
+  const [configQuestionTypes, setConfigQuestionTypes] = useState<string[]>([
+    'multiple-choice',
+    'true-false',
+    'short-answer',
+    'multiple-response',
+    'fill-in-the-blank'
+  ]);
+  const [configCustomNotes, setConfigCustomNotes] = useState<string>('');
+
   // Course tree toggle states
   const [collapsedModules, setCollapsedModules] = useState<Record<string, boolean>>({});
+  const [isAddMenuOpen, setIsAddMenuOpen] = useState<boolean>(false);
 
   // Helper: Get active item & module
   const activeModule = course.modules.find(m => m.id === activeModuleId);
@@ -59,7 +81,14 @@ export default function QuizEditor({ course, onBack, onUpdateCourse, onPreviewQu
     : (course.courseQuizzes?.find(q => q.id === activeItemId) || activeModule?.items.find(i => i.id === activeItemId));
 
   // Generate Course-level Comprehensive Quiz with AI
-  const generateCourseQuizWithAi = async () => {
+  const generateCourseQuizWithAi = async (settings: {
+    numQuestions: number;
+    optionsCount: number;
+    difficulty: 'Beginner' | 'Intermediate' | 'Advanced';
+    language: 'Vietnamese' | 'English';
+    questionTypes: string[];
+    customNotes: string;
+  }) => {
     setIsGeneratingCourseQuiz(true);
     setCourseGenerationError('');
     try {
@@ -78,7 +107,12 @@ export default function QuizEditor({ course, onBack, onUpdateCourse, onPreviewQu
           courseTitle: course.title,
           courseDescription: course.description,
           modulesData: modulesData,
-          difficulty: 'Advanced'
+          difficulty: settings.difficulty,
+          numQuestions: settings.numQuestions,
+          optionsCount: settings.optionsCount,
+          language: settings.language,
+          questionTypes: settings.questionTypes,
+          customNotes: settings.customNotes
         })
       });
 
@@ -108,7 +142,14 @@ export default function QuizEditor({ course, onBack, onUpdateCourse, onPreviewQu
   };
 
   // Generate Module-level Quiz with AI
-  const generateModuleQuizWithAi = async () => {
+  const generateModuleQuizWithAi = async (settings: {
+    numQuestions: number;
+    optionsCount: number;
+    difficulty: 'Beginner' | 'Intermediate' | 'Advanced';
+    language: 'Vietnamese' | 'English';
+    questionTypes: string[];
+    customNotes: string;
+  }) => {
     if (!activeModule) return;
     setIsGeneratingModuleQuiz(true);
     setGenerationError('');
@@ -122,7 +163,12 @@ export default function QuizEditor({ course, onBack, onUpdateCourse, onPreviewQu
         body: JSON.stringify({
           moduleTitle: activeModule.title,
           lessonTexts: lessonTexts,
-          difficulty: 'Intermediate'
+          difficulty: settings.difficulty,
+          numQuestions: settings.numQuestions,
+          optionsCount: settings.optionsCount,
+          language: settings.language,
+          questionTypes: settings.questionTypes,
+          customNotes: settings.customNotes
         })
       });
 
@@ -157,7 +203,14 @@ export default function QuizEditor({ course, onBack, onUpdateCourse, onPreviewQu
   };
 
   // Generate Lesson-level practice Quiz with AI
-  const generateLessonQuizWithAi = async (lessonId: string) => {
+  const generateLessonQuizWithAi = async (lessonId: string, settings: {
+    numQuestions: number;
+    optionsCount: number;
+    difficulty: 'Beginner' | 'Intermediate' | 'Advanced';
+    language: 'Vietnamese' | 'English';
+    questionTypes: string[];
+    customNotes: string;
+  }) => {
     const lesson = activeModule?.items.find(i => i.id === lessonId);
     if (!lesson || !activeModule) return;
     setIsGeneratingLessonQuiz(true);
@@ -169,7 +222,12 @@ export default function QuizEditor({ course, onBack, onUpdateCourse, onPreviewQu
         body: JSON.stringify({
           lessonTitle: lesson.title,
           lessonContent: lesson.content || "",
-          difficulty: 'Intermediate'
+          difficulty: settings.difficulty,
+          numQuestions: settings.numQuestions,
+          optionsCount: settings.optionsCount,
+          language: settings.language,
+          questionTypes: settings.questionTypes,
+          customNotes: settings.customNotes
         })
       });
 
@@ -371,17 +429,69 @@ export default function QuizEditor({ course, onBack, onUpdateCourse, onPreviewQu
     }));
   };
 
-  // Add clean blank question card
-  const addBlankQuestion = () => {
-    const defaultNew: Question = {
-      id: `q_new_${Date.now()}`,
-      type: 'multiple-choice',
-      text: 'What other core concept should we assess in this module?',
-      options: ['Analytical response option A', 'Nutritional distractor B', 'Baseline criteria option C'],
-      correctOptionIndex: 0,
-      points: 1,
-      required: true
-    };
+  // Add clean blank question card of dynamic type
+  const addBlankQuestion = (type: Question['type'] = 'multiple-choice') => {
+    let defaultNew: Question;
+
+    if (type === 'true-false') {
+      defaultNew = {
+        id: `q_new_${Date.now()}`,
+        type: 'true-false',
+        text: 'Nhận định sau đây đại diện cho thông tin chính xác? (Đúng hay Sai)',
+        options: ['Đúng', 'Sai'],
+        correctOptionIndex: 0,
+        points: 1,
+        required: true
+      };
+    } else if (type === 'multiple-response') {
+      defaultNew = {
+        id: `q_new_${Date.now()}`,
+        type: 'multiple-response',
+        text: 'Lựa chọn tất cả các định lý hoặc kết luận chính xác sau đây:',
+        options: ['Phương án luận điểm A', 'Phương án đối lập B', 'Khái niệm liên quan luận thuyết C', 'Phương án loại trừ D'],
+        correctOptionIndices: [0],
+        points: 1,
+        required: true
+      };
+    } else if (type === 'fill-in-the-blank') {
+      defaultNew = {
+        id: `q_new_${Date.now()}`,
+        type: 'fill-in-the-blank',
+        text: 'Điền từ thích hợp vào chỗ trống: Học tập hiệu quả cần kết hợp giữa lý thuyết và thực hành _____ liên tục.',
+        correctAnswer: 'rèn luyện',
+        points: 1,
+        required: true
+      };
+    } else if (type === 'short-answer') {
+      defaultNew = {
+        id: `q_new_${Date.now()}`,
+        type: 'short-answer',
+        text: 'Hãy trả lời ngắn gọn: Mục tiêu cốt lõi của bài học nghiên cứu này là gì?',
+        correctAnswer: 'Đáp án đề xuất ngắn gọn chính xác.',
+        points: 1,
+        required: true
+      };
+    } else if (type === 'essay') {
+      defaultNew = {
+        id: `q_new_${Date.now()}`,
+        type: 'essay',
+        text: 'Hãy viết đoạn văn ngắn phân tích đánh giá cấu trúc bài học này:',
+        correctAnswer: 'Tiêu chuẩn chấm điểm: HS cần chỉ ra đúng ít nhất hai đặc điểm cấu trúc có liên hệ thực tế.',
+        points: 1,
+        required: true
+      };
+    } else {
+      defaultNew = {
+        id: `q_new_${Date.now()}`,
+        type: 'multiple-choice',
+        text: 'Khái niệm cốt lõi nào của mô hinh cần kiểm tra thêm ở đây?',
+        options: ['Lựa chọn A phát triển đồng bộ', 'Lựa chọn B phân tích tương quan', 'Lựa chọn C định mức điều kiện', 'Lựa chọn D ngẫu nhiên hóa'],
+        correctOptionIndex: 0,
+        points: 1,
+        required: true
+      };
+    }
+
     updateActiveQuiz(quiz => ({
       ...quiz,
       questions: [...quiz.questions, defaultNew]
@@ -654,13 +764,16 @@ export default function QuizEditor({ course, onBack, onUpdateCourse, onPreviewQu
 
                       {/* Highly visible instant AI generation trigger right in sidebar */}
                       <button
-                        onClick={async (e) => {
+                        onClick={(e) => {
                           e.stopPropagation();
                           setIsCourseOverviewActive(false);
                           setActiveModuleId(mod.id);
                           setActiveItemId('');
-                          // Trigger AI Module Quiz synthesis immediately
-                          await generateModuleQuizWithAi();
+                          setSetupGenTarget({
+                            type: 'module',
+                            targetId: mod.id,
+                            title: mod.title
+                          });
                         }}
                         title="Tạo trắc nghiệm AI đánh giá chương này"
                         className="p-1 text-gray-400 hover:text-[#0ac75f] hover:bg-green-100/60 rounded transition-colors shrink-0 cursor-pointer"
@@ -838,7 +951,10 @@ export default function QuizEditor({ course, onBack, onUpdateCourse, onPreviewQu
                     </div>
                   ) : (
                     <button
-                      onClick={generateCourseQuizWithAi}
+                      onClick={() => setSetupGenTarget({
+                        type: 'course',
+                        title: course.title
+                      })}
                       className="bg-blue-600 hover:bg-blue-500 text-white font-extrabold px-6 py-3 rounded-lg border border-black shadow-[4px_4px_0px_rgba(0,0,0,1)] active:translate-y-0.5 active:shadow-none transition-all text-sm cursor-pointer inline-flex items-center gap-2"
                     >
                       <Sparkles className="w-4 h-4 text-white" />
@@ -971,7 +1087,11 @@ export default function QuizEditor({ course, onBack, onUpdateCourse, onPreviewQu
                     </div>
                   ) : (
                     <button
-                      onClick={generateModuleQuizWithAi}
+                      onClick={() => setSetupGenTarget({
+                        type: 'module',
+                        targetId: activeModule?.id,
+                        title: activeModule?.title || ''
+                      })}
                       className="bg-[#0ac75f] hover:bg-[#00e066] text-black font-extrabold px-5 py-2.5 rounded-lg border border-black shadow-[2px_2px_0px_rgba(0,0,0,1)] active:translate-y-0.5 active:shadow-none transition-all text-xs cursor-pointer inline-flex items-center gap-2"
                     >
                       <Sparkles className="w-4 h-4 text-black" />
@@ -1093,9 +1213,13 @@ export default function QuizEditor({ course, onBack, onUpdateCourse, onPreviewQu
                                   </div>
                                   <div className="flex items-center gap-2">
                                     <button
-                                      onClick={async (e) => {
+                                      onClick={(e) => {
                                         e.stopPropagation();
-                                        await generateLessonQuizWithAi(lesson.id);
+                                        setSetupGenTarget({
+                                          type: 'lesson',
+                                          targetId: lesson.id,
+                                          title: lesson.title
+                                        });
                                       }}
                                       title="Sinh trắc nghiệm AI dựa vào nội dung bài học này"
                                       className="flex items-center gap-1 bg-[#edf9f3] text-[#00662d] hover:bg-green-150 px-2.5 py-1 rounded text-[11px] font-extrabold border border-green-200 cursor-pointer shadow-3xs"
@@ -1160,7 +1284,11 @@ export default function QuizEditor({ course, onBack, onUpdateCourse, onPreviewQu
                           <div className="text-center py-6 border border-dashed border-gray-200 rounded-lg bg-gray-50/50">
                             <p className="text-xs text-gray-500 font-medium">Chưa có bài trắc nghiệm tổng hợp chương nào.</p>
                             <button
-                              onClick={generateModuleQuizWithAi}
+                              onClick={() => setSetupGenTarget({
+                                type: 'module',
+                                targetId: activeModule?.id,
+                                title: activeModule?.title || ''
+                              })}
                               className="mt-2 text-xs font-bold text-[#00662d] hover:underline cursor-pointer inline-flex items-center gap-1"
                             >
                               <Sparkles className="w-3.5 h-3.5" />
@@ -1370,20 +1498,38 @@ export default function QuizEditor({ course, onBack, onUpdateCourse, onPreviewQu
 
                               {/* Question Options Block */}
                               <div className="mt-4 space-y-3" onClick={(e) => !isActive && e.stopPropagation()}>
-                                {/* Render Multiple Choice / Boolean Choices */}
-                                {question.type !== 'essay' && question.options ? (
+                                {/* Render Multiple Choice / Boolean Choices / Multiple Response */}
+                                {['multiple-choice', 'true-false', 'multiple-response'].includes(question.type) && question.options ? (
                                   <>
                                     <div className="space-y-2">
                                       {question.options.map((option, idx) => {
-                                        const isCorrect = question.correctOptionIndex === idx;
+                                        const isMultiResponse = question.type === 'multiple-response';
+                                        const isCorrect = isMultiResponse
+                                          ? (question.correctOptionIndices?.includes(idx) || false)
+                                          : (question.correctOptionIndex === idx);
                                         return (
                                           <div key={idx} className="flex items-center gap-3 group/opt">
-                                            <input 
-                                              type="radio"
-                                              checked={isCorrect}
-                                              onChange={() => handleQuestionConfigChange(question.id, { correctOptionIndex: idx })}
-                                              className="w-4 h-4 text-[#0ac75f] border-gray-300 focus:ring-[#0ac75f] cursor-pointer"
-                                            />
+                                            {isMultiResponse ? (
+                                              <input 
+                                                type="checkbox"
+                                                checked={isCorrect}
+                                                onChange={(e) => {
+                                                  const currentIndices = question.correctOptionIndices || [];
+                                                  const updatedIndices = e.target.checked
+                                                    ? [...currentIndices, idx]
+                                                    : currentIndices.filter(i => i !== idx);
+                                                  handleQuestionConfigChange(question.id, { correctOptionIndices: updatedIndices });
+                                                }}
+                                                className="w-4 h-4 text-[#0ac75f] border-gray-300 focus:ring-[#0ac75f] rounded cursor-pointer"
+                                              />
+                                            ) : (
+                                              <input 
+                                                type="radio"
+                                                checked={isCorrect}
+                                                onChange={() => handleQuestionConfigChange(question.id, { correctOptionIndex: idx })}
+                                                className="w-4 h-4 text-[#0ac75f] border-gray-300 focus:ring-[#0ac75f] cursor-pointer"
+                                              />
+                                            )}
                                             {isActive ? (
                                               /* Editable choice input */
                                               <input
@@ -1402,7 +1548,7 @@ export default function QuizEditor({ course, onBack, onUpdateCourse, onPreviewQu
                                             )}
 
                                             {/* Close option cross button */}
-                                            {isActive && question.options && question.options.length > 2 && (
+                                            {isActive && question.options && question.options.length > 2 && question.type !== 'true-false' && (
                                               <button 
                                                 onClick={() => removeOption(question.id, idx)}
                                                 className="text-gray-400 hover:text-red-500 opacity-0 group-hover/opt:opacity-100 transition-opacity p-0.5"
@@ -1416,32 +1562,47 @@ export default function QuizEditor({ course, onBack, onUpdateCourse, onPreviewQu
                                     </div>
 
                                     {/* Add Option text CTA */}
-                                    {isActive && (
+                                    {isActive && question.type !== 'true-false' && (
                                       <div className="flex items-center gap-3 pt-2">
                                         <div className="w-4 h-4 rounded-full border border-gray-300 border-dashed flex items-center justify-center shrink-0"></div>
                                         <button 
                                           onClick={() => addOption(question.id)}
                                           className="text-xs text-gray-500 hover:text-gray-900 font-bold cursor-pointer"
                                         >
-                                          Add Option
+                                          + Thêm phương án chọn
                                         </button>
                                       </div>
                                     )}
                                   </>
                                 ) : (
-                                  /* Essay free text reply display box in macro card */
+                                  /* Fill in the blank / Short answer / Essay free text reply display box */
                                   <div className="bg-gray-50 border border-gray-200 rounded p-4 text-xs">
-                                    <div className="text-gray-400 font-bold uppercase mb-1 tracking-wider text-[10px]">Grading Rubric Hint / Best Answer:</div>
+                                    <div className="text-gray-400 font-bold uppercase mb-1 tracking-wider text-[10px]">
+                                      {question.type === 'fill-in-the-blank' && 'Từ/Cụm từ điền vào chỗ trống:'}
+                                      {question.type === 'short-answer' && 'Đáp án đúng tham chiếu:'}
+                                      {question.type === 'essay' && 'Gợi ý đáp án / Tiêu chí chấm điểm:'}
+                                    </div>
                                     {isActive ? (
                                       <input 
                                         type="text"
                                         value={question.correctAnswer || ''}
                                         onChange={(e) => handleQuestionConfigChange(question.id, { correctAnswer: e.target.value })}
-                                        placeholder="Add comparative rubric requirements for full points..."
+                                        placeholder={
+                                          question.type === 'fill-in-the-blank' 
+                                            ? "Nhập từ chính xác cần điền (Ví dụ: thiết kế)..." 
+                                            : "Nhập tài liệu hướng dẫn đáp án đúng..."
+                                        }
                                         className="w-full text-xs text-gray-700 bg-white border border-gray-200 rounded p-1.5 focus:border-[#0ac75f] focus:ring-0 outline-none mt-1 font-mono"
                                       />
                                     ) : (
-                                      <p className="text-gray-600 italic font-medium">{question.correctAnswer || "Provide structured analysis of policy effects."}</p>
+                                      <p className="text-gray-600 italic font-medium">
+                                        {question.correctAnswer || (question.type === 'fill-in-the-blank' ? "Chưa thiết lập từ khóa điền chỗ trống" : "Chưa thiết lập đáp án gợi ý")}
+                                      </p>
+                                    )}
+                                    {question.type === 'fill-in-the-blank' && isActive && (
+                                      <div className="mt-1.5 text-[10px] text-gray-400 font-medium italic">
+                                        Mẹo: Nội dung câu hỏi nên chứa phần gạch dưới <code className="bg-gray-200 px-1 py-0.5 rounded font-mono text-[9px]">_____</code> đại diện cho ô trống cần điền.
+                                      </div>
                                     )}
                                   </div>
                                 )}
@@ -1470,11 +1631,52 @@ export default function QuizEditor({ course, onBack, onUpdateCourse, onPreviewQu
                                     />
                                   </span>
                                 </div>
-                                <span className="text-[10px] uppercase tracking-wider font-bold bg-[#f4f5f6] text-gray-500 px-2 py-0.5 rounded">
-                                  {question.type === 'multiple-choice' && 'Multiple Choice'}
-                                  {question.type === 'true-false' && 'True / False'}
-                                  {question.type === 'essay' && 'Short Essay'}
-                                </span>
+                                {isActive ? (
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="text-[10px] font-bold text-gray-400">Loại:</span>
+                                    <select
+                                      value={question.type}
+                                      onChange={(e) => {
+                                        const newType = e.target.value as Question['type'];
+                                        const updates: Partial<Question> = { type: newType };
+                                        if (newType === 'true-false') {
+                                          updates.options = ['Đúng', 'Sai'];
+                                          updates.correctOptionIndex = 0;
+                                        } else if (['multiple-choice', 'multiple-response'].includes(newType)) {
+                                          if (!question.options || question.options.length < 2) {
+                                            updates.options = ['Lựa chọn A', 'Lựa chọn B', 'Lựa chọn C', 'Lựa chọn D'];
+                                          }
+                                          if (newType === 'multiple-choice') {
+                                            updates.correctOptionIndex = 0;
+                                          } else {
+                                            updates.correctOptionIndices = [0];
+                                          }
+                                        } else {
+                                          updates.options = undefined;
+                                          updates.correctAnswer = question.correctAnswer || '';
+                                        }
+                                        handleQuestionConfigChange(question.id, updates);
+                                      }}
+                                      className="text-[10px] uppercase font-extrabold bg-white text-gray-700 border border-gray-300 rounded px-2 py-0.5 focus:outline-none focus:ring-1 focus:ring-green-400 cursor-pointer"
+                                    >
+                                      <option value="multiple-choice">Trắc nghiệm</option>
+                                      <option value="true-false font-bold">Đúng / Sai</option>
+                                      <option value="multiple-response">Chọn nhiều</option>
+                                      <option value="fill-in-the-blank">Điền ô trống</option>
+                                      <option value="short-answer">Trả lời ngắn</option>
+                                      <option value="essay">Tự luận</option>
+                                    </select>
+                                  </div>
+                                ) : (
+                                  <span className="text-[10px] uppercase tracking-wider font-extrabold bg-[#f4f5f6] text-gray-500 px-2 py-0.5 rounded">
+                                    {question.type === 'multiple-choice' && 'Trắc nghiệm (1 đáp án)'}
+                                    {question.type === 'true-false' && 'Đúng / Sai'}
+                                    {question.type === 'multiple-response' && 'Chọn nhiều đáp án'}
+                                    {question.type === 'fill-in-the-blank' && 'Điền ô trống'}
+                                    {question.type === 'short-answer' && 'Trả lời ngắn'}
+                                    {question.type === 'essay' && 'Tự luận'}
+                                  </span>
+                                )}
                               </div>
 
                             </div>
@@ -1487,13 +1689,49 @@ export default function QuizEditor({ course, onBack, onUpdateCourse, onPreviewQu
 
                 {/* Question generation buttons at bottom center */}
                 <div className="flex justify-center gap-3 py-4">
-                  <button 
-                    onClick={addBlankQuestion}
-                    className="flex items-center gap-2 bg-white border border-gray-200 hover:border-black text-[#111827] text-sm font-bold py-2 px-5 rounded-md hover:shadow-xs transition-all cursor-pointer shadow-xs"
-                  >
-                    <Plus className="w-4 h-4" />
-                    Add Blank
-                  </button>
+                  <div className="relative">
+                    <button 
+                      onClick={() => setIsAddMenuOpen(!isAddMenuOpen)}
+                      className="flex items-center gap-2 bg-white border border-gray-200 hover:border-black text-[#111827] text-sm font-extrabold py-2 px-5 rounded-md hover:shadow-xs transition-all cursor-pointer shadow-xs"
+                    >
+                      <Plus className="w-4 h-4 text-gray-700" />
+                      Add Blank
+                      <ChevronDown className="w-3.5 h-3.5 text-gray-500" />
+                    </button>
+                    
+                    {isAddMenuOpen && (
+                      <>
+                        <div 
+                          className="fixed inset-0 z-40" 
+                          onClick={() => setIsAddMenuOpen(false)}
+                        />
+                        <div className="absolute bottom-full mb-2 left-0 z-50 w-60 bg-white border-2 border-black rounded-lg shadow-[4px_4px_0px_rgba(0,0,0,1)] p-1.5 flex flex-col gap-1 text-left anim-fade-in animate-duration-100">
+                          <div className="px-2 py-1 border-b border-gray-100 mb-1">
+                            <span className="text-[9px] font-black uppercase text-gray-400 tracking-wider">Chọn loại câu hỏi trống</span>
+                          </div>
+                          {[
+                            { value: 'multiple-choice', label: 'Trắc nghiệm (1 đáp án)' },
+                            { value: 'true-false', label: 'Đúng / Sai' },
+                            { value: 'multiple-response', label: 'Chọn nhiều (Nhiều đáp án)' },
+                            { value: 'fill-in-the-blank', label: 'Điền vào chỗ trống' },
+                            { value: 'short-answer', label: 'Trả lời ngắn' },
+                            { value: 'essay', label: 'Tự luận / Trình bày ý' },
+                          ].map((item) => (
+                            <button
+                              key={item.value}
+                              onClick={() => {
+                                addBlankQuestion(item.value as Question['type']);
+                                setIsAddMenuOpen(false);
+                              }}
+                              className="w-full text-left px-2.5 py-1.5 hover:bg-green-50 hover:text-green-800 rounded text-xs font-bold transition-colors cursor-pointer"
+                            >
+                              {item.label}
+                            </button>
+                          ))}
+                        </div>
+                      </>
+                    )}
+                  </div>
                   <button 
                     onClick={() => {
                       // Call client quiz helper to append simulated topic questions
@@ -1537,7 +1775,11 @@ export default function QuizEditor({ course, onBack, onUpdateCourse, onPreviewQu
                       </div>
                     ) : (
                       <button
-                        onClick={() => generateLessonQuizWithAi(activeItem!.id)}
+                        onClick={() => setSetupGenTarget({
+                          type: 'lesson',
+                          targetId: activeItem!.id,
+                          title: activeItem!.title
+                        })}
                         className="flex items-center gap-1.5 bg-gradient-to-r from-emerald-50 to-green-50 border border-[#0ac75f]/40 hover:border-[#0ac75f] text-[#00662d] font-extrabold text-xs px-3 py-1.5 rounded-md hover:bg-green-100 transition-all cursor-pointer shadow-xs"
                         title="Sinh bài trắc nghiệm trắc nghiệm AI dựa trên nội dung bài viết dưới"
                       >
@@ -1690,6 +1932,191 @@ export default function QuizEditor({ course, onBack, onUpdateCourse, onPreviewQu
           </div>
         </aside>
       </div>
+
+      {/* AI QUIZ GENERATOR CONFIGURATION DIALOG MODAL */}
+      {setupGenTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 overflow-y-auto">
+          <div className="bg-white rounded-2xl border-2 border-black max-w-lg w-full shadow-[6px_6px_0px_rgba(0,0,0,1)] hover:shadow-[10px_10px_0px_rgba(0,0,0,1)] transition-all overflow-hidden flex flex-col text-left">
+            {/* Header */}
+            <div className="bg-gradient-to-r from-green-50 to-emerald-50 border-b-2 border-black p-5 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="w-9 h-9 bg-green-100 rounded-full flex items-center justify-center border border-black shadow-[1px_1px_0px_rgba(0,0,0,1)]">
+                  <Sparkles className="w-5 h-5 text-green-700" />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-sm text-gray-900">Thiết lập cấu hình AI Quiz</h3>
+                  <p className="text-[10px] uppercase font-bold text-green-700 tracking-wider">
+                    {setupGenTarget.type === 'lesson' ? 'Bài học' : setupGenTarget.type === 'module' ? 'Module' : 'Khóa học'}: {setupGenTarget.title}
+                  </p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setSetupGenTarget(null)}
+                className="text-gray-400 hover:text-black hover:bg-gray-100 p-1 rounded-lg border border-transparent transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Custom Content fields */}
+            <div className="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
+              {/* Question count and option limit */}
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-black text-gray-700 uppercase tracking-wider mb-1">
+                    Số lượng câu hỏi (1 - 25)
+                  </label>
+                  <input 
+                    type="number"
+                    min={1}
+                    max={25}
+                    value={configNumQuestions}
+                    onChange={(e) => setConfigNumQuestions(Math.max(1, parseInt(e.target.value) || 1))}
+                    className="w-full px-3 py-2 border-2 border-black rounded-lg focus:outline-none focus:ring-2 focus:ring-green-400 font-mono text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-black text-gray-700 uppercase tracking-wider mb-1">
+                    Số đáp án (Trắc nghiệm)
+                  </label>
+                  <input 
+                    type="number"
+                    min={2}
+                    max={6}
+                    value={configOptionsCount}
+                    onChange={(e) => setConfigOptionsCount(Math.max(2, parseInt(e.target.value) || 4))}
+                    className="w-full px-3 py-2 border-2 border-black rounded-lg focus:outline-none focus:ring-2 focus:ring-green-400 font-mono text-sm"
+                  />
+                </div>
+              </div>
+
+              {/* Difficulty & Language selection */}
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-black text-gray-700 uppercase tracking-wider mb-1">
+                    Độ khó mong muốn
+                  </label>
+                  <select
+                    value={configDifficulty}
+                    onChange={(e: any) => setConfigDifficulty(e.target.value)}
+                    className="w-full px-3 py-2 border-2 border-black bg-white rounded-lg focus:outline-none focus:ring-2 focus:ring-green-400 font-bold text-xs"
+                  >
+                    <option value="Beginner">Beginner (Cơ bản)</option>
+                    <option value="Intermediate">Intermediate (Trung bình)</option>
+                    <option value="Advanced">Advanced (Nâng cao/Chuyên gia)</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-black text-gray-700 uppercase tracking-wider mb-1">
+                    Ngôn ngữ đầu ra
+                  </label>
+                  <select
+                    value={configLanguage}
+                    onChange={(e: any) => setConfigLanguage(e.target.value)}
+                    className="w-full px-3 py-2 border-2 border-black bg-white rounded-lg focus:outline-none focus:ring-2 focus:ring-green-400 font-bold text-xs"
+                  >
+                    <option value="Vietnamese">Vietnam (Tiếng Việt)</option>
+                    <option value="English">English (Tiếng Anh)</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Question types checklist */}
+              <div>
+                <label className="block text-xs font-black text-gray-700 uppercase tracking-wider mb-1.5">
+                  Các loại câu hỏi cho phép sinh:
+                </label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 bg-gray-50 border border-gray-200 rounded-lg p-3">
+                  {[
+                    { value: 'multiple-choice', label: 'Trắc nghiệm (1 đáp án đúng)' },
+                    { value: 'true-false', label: 'Đúng / Sai' },
+                    { value: 'multiple-response', label: 'Chọn nhiều (Nhiều đáp án)' },
+                    { value: 'fill-in-the-blank', label: 'Điền vào chỗ trống' },
+                    { value: 'short-answer', label: 'Trả lời ngắn' }
+                  ].map((item) => {
+                    const isChecked = configQuestionTypes.includes(item.value);
+                    return (
+                      <label 
+                        key={item.value} 
+                        className="flex items-center gap-2 text-xs font-semibold text-gray-700 cursor-pointer hover:text-black py-0.5"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={() => {
+                            if (isChecked) {
+                              if (configQuestionTypes.length > 1) {
+                                setConfigQuestionTypes(configQuestionTypes.filter(x => x !== item.value));
+                              }
+                            } else {
+                              setConfigQuestionTypes([...configQuestionTypes, item.value]);
+                            }
+                          }}
+                          className="rounded border-gray-300 text-green-650 focus:ring-green-500 w-3.5 h-3.5"
+                        />
+                        <span>{item.label}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Textarea for custom notes guidelines */}
+              <div>
+                <div className="flex justify-between items-center mb-1">
+                  <label className="block text-xs font-black text-gray-700 uppercase tracking-wider">
+                    Ghi chú hướng dẫn đặc biệt cho AI
+                  </label>
+                  <span className="text-[9px] text-gray-400 font-bold font-mono">Tùy chọn</span>
+                </div>
+                <textarea
+                  value={configCustomNotes}
+                  onChange={(e) => setConfigCustomNotes(e.target.value)}
+                  placeholder="Ví dụ: Tập trung kỹ vào phần công thức thực nghiệm, bỏ qua phần lý thuyết rườm rà..."
+                  rows={2}
+                  className="w-full px-3 py-2 border-2 border-black rounded-lg focus:outline-none focus:ring-2 focus:ring-green-400 text-xs text-gray-850 placeholder-gray-400"
+                />
+              </div>
+            </div>
+
+            {/* Footer with actions */}
+            <div className="bg-gray-50 border-t-2 border-black p-4 flex justify-end gap-3">
+              <button 
+                onClick={() => setSetupGenTarget(null)}
+                className="px-4 py-2 text-xs font-extrabold bg-white hover:bg-gray-100 border border-black rounded-lg active:translate-y-0.5 shadow-[1.5px_1.5px_0px_rgba(0,0,0,1)] hover:shadow-[2px_2px_0px_rgba(0,0,0,1)] active:shadow-none transition-all cursor-pointer text-gray-800"
+              >
+                Hủy bỏ (Close)
+              </button>
+              <button
+                onClick={async () => {
+                  const target = setupGenTarget;
+                  const currentSettings = {
+                    numQuestions: configNumQuestions,
+                    optionsCount: configOptionsCount,
+                    difficulty: configDifficulty,
+                    language: configLanguage,
+                    questionTypes: configQuestionTypes,
+                    customNotes: configCustomNotes
+                  };
+                  setSetupGenTarget(null); // Close modal
+
+                  if (target.type === 'lesson' && target.targetId) {
+                    await generateLessonQuizWithAi(target.targetId, currentSettings);
+                  } else if (target.type === 'module') {
+                    await generateModuleQuizWithAi(currentSettings);
+                  } else if (target.type === 'course') {
+                    await generateCourseQuizWithAi(currentSettings);
+                  }
+                }}
+                className="px-4 py-2 text-xs font-extrabold bg-green-500 hover:bg-green-400 text-black border border-black rounded-lg active:translate-y-0.5 shadow-[2px_2px_0px_rgba(0,0,0,1)] hover:shadow-[3px_3px_0px_rgba(0,0,0,1)] active:shadow-none transition-all cursor-pointer inline-flex items-center gap-1.5"
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                Bắt đầu sinh với AI 🚀
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

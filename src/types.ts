@@ -12,11 +12,12 @@ export interface QuizSettings {
 
 export interface Question {
   id: string;
-  type: 'multiple-choice' | 'essay' | 'short-answer' | 'true-false';
+  type: 'multiple-choice' | 'essay' | 'short-answer' | 'true-false' | 'multiple-response' | 'fill-in-the-blank';
   text: string;
   options?: string[];
-  correctOptionIndex?: number; // for multiple choice
-  correctAnswer?: string; // for essays or short answer, or true-false string
+  correctOptionIndex?: number; // for multiple choice or true-false
+  correctOptionIndices?: number[]; // for multiple response (select multiple options)
+  correctAnswer?: string; // for essays, short answer, fill-in-the-blank, or true-false string
   points: number;
   required: boolean;
 }
