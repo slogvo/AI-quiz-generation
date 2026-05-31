@@ -1,0 +1,8 @@
+{
+  "name": "AI Quiz Generator",
+  "description": "An AI-powered application to generate custom course structures, lessons, and interactive quizzes from documents or topics, complete with real-time concept extraction and a powerful quiz editor canvas.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
